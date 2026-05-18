@@ -15,8 +15,9 @@
 """
 
 import os
+from datetime import timezone as _tz
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import DateTime as _DateTime, TypeDecorator, create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 # 数据库文件路径：backend/data/vocab.db
@@ -55,6 +56,18 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 # 声明式基类（SQLAlchemy 2.x 风格）
 class Base(DeclarativeBase):
     pass
+
+
+class TZDateTime(TypeDecorator):
+    """SQLite 的 DateTime(timezone=True) 读回时会丢失 tzinfo，这个类在读取时补回 UTC。"""
+
+    impl = _DateTime(timezone=True)
+    cache_ok = True
+
+    def process_result_value(self, value, dialect):
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=_tz.utc)
+        return value
 
 
 def get_db():

@@ -9,7 +9,10 @@ Terms API 集成测试
 - 更新（部分字段 / tags 三种语义）
 - 删除
 - 错误路径（404 / 422）
+- 时间字段时区格式
 """
+
+from datetime import datetime
 
 
 # ============================================================
@@ -68,6 +71,12 @@ def test_create_duplicate_terms_allowed(client):
     client.post("/terms", json={"term": "run"})
     resp = client.get("/terms")
     assert len(resp.json()) == 2
+
+
+def test_create_term_tag_with_comma_returns_422(client):
+    """tag 字符串含逗号（用户误把逗号当分隔符）→ 422；应用 list 代替"""
+    resp = client.post("/terms", json={"term": "test", "tags": ["GRE,vocab"]})
+    assert resp.status_code == 422
 
 
 # ============================================================
@@ -136,6 +145,39 @@ def test_filter_by_status_new(client):
     results = resp.json()
     assert len(results) == 2
     assert all(t["status"] == "new" for t in results)
+
+
+def test_filter_by_status_learning(client):
+    """status=learning：只返回复习过但未掌握的词条"""
+    new_term = client.post("/terms", json={"term": "new_word"}).json()
+    learning_term = client.post("/terms", json={"term": "learning_word"}).json()
+    # 提交一次复习 → learning_term 变为 learning
+    client.post(f"/terms/{learning_term['id']}/reviews", json={"rating": "good"})
+
+    resp = client.get("/terms?status=learning")
+    assert resp.status_code == 200
+    results = resp.json()
+    result_ids = {r["id"] for r in results}
+    assert learning_term["id"] in result_ids
+    assert new_term["id"] not in result_ids
+    assert all(r["status"] == "learning" for r in results)
+
+
+def test_filter_by_status_mastered(client):
+    """status=mastered：只返回已掌握的词条"""
+    new_term = client.post("/terms", json={"term": "new_word"}).json()
+    mastered_term = client.post("/terms", json={"term": "mastered_word"}).json()
+    # 3 次 easy → mastered（scheduler 规则：rep >= 2 时升 mastered）
+    for _ in range(3):
+        client.post(f"/terms/{mastered_term['id']}/reviews", json={"rating": "easy"})
+
+    resp = client.get("/terms?status=mastered")
+    assert resp.status_code == 200
+    results = resp.json()
+    result_ids = {r["id"] for r in results}
+    assert mastered_term["id"] in result_ids
+    assert new_term["id"] not in result_ids
+    assert all(r["status"] == "mastered" for r in results)
 
 
 def test_filter_by_invalid_status_returns_422(client):
@@ -233,6 +275,13 @@ def test_update_term_tags_replace(client):
     assert resp.json()["tags"] == ["vocab", "CS"]
 
 
+def test_update_term_tag_with_comma_returns_422(client):
+    """PUT 时 tags 中含逗号 → 422"""
+    created = client.post("/terms", json={"term": "test"}).json()
+    resp = client.put(f"/terms/{created['id']}", json={"tags": ["bad,tag"]})
+    assert resp.status_code == 422
+
+
 def test_update_term_not_found(client):
     resp = client.put("/terms/9999", json={"definition": "x"})
     assert resp.status_code == 404
@@ -269,3 +318,35 @@ def test_health(client):
     resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
+
+
+# ============================================================
+# 时间字段时区格式（D09：UTC everywhere）
+# ============================================================
+
+def test_term_timestamps_are_timezone_aware(client):
+    """TermResponse 的时间字段序列化后应带有 UTC 时区偏移（+00:00）。
+    验证 utc_now() → SQLAlchemy DateTime(timezone=True) → Pydantic → JSON 全链路。"""
+    created = client.post("/terms", json={"term": "test"}).json()
+    for field in ("created_at", "updated_at"):
+        parsed = datetime.fromisoformat(created[field])
+        assert parsed.tzinfo is not None, f"{field} 缺少时区信息: {created[field]}"
+
+
+def test_review_timestamps_are_timezone_aware(client):
+    """ReviewLogResponse 的时间字段也应带有 UTC 时区偏移。"""
+    t = client.post("/terms", json={"term": "test"}).json()
+    log = client.post(f"/terms/{t['id']}/reviews", json={"rating": "good"}).json()
+    for field in ("reviewed_at", "new_next_review_at"):
+        parsed = datetime.fromisoformat(log[field])
+        assert parsed.tzinfo is not None, f"{field} 缺少时区信息: {log[field]}"
+
+
+def test_term_timestamps_after_review_are_timezone_aware(client):
+    """复习后 TermResponse 的 last_reviewed_at / next_review_at 也带时区。"""
+    t = client.post("/terms", json={"term": "test"}).json()
+    client.post(f"/terms/{t['id']}/reviews", json={"rating": "good"})
+    updated = client.get(f"/terms/{t['id']}").json()
+    for field in ("last_reviewed_at", "next_review_at"):
+        parsed = datetime.fromisoformat(updated[field])
+        assert parsed.tzinfo is not None, f"{field} 缺少时区信息: {updated[field]}"

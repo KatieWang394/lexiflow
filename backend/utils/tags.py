@@ -10,10 +10,19 @@ def tags_to_string(tags: list[str]) -> str:
     """
     将标签列表转为逗号分隔的字符串，用于数据库存储。
     自动去除每个标签的首尾空白，并过滤掉空字符串。
+    逗号是字段分隔符，tag 本身不允许包含逗号。
 
     示例：["GRE", " CS ", ""] → "GRE,CS"
     """
-    return ",".join(tag.strip() for tag in tags if tag.strip())
+    cleaned = []
+    for tag in tags:
+        tag = tag.strip()
+        if not tag:
+            continue
+        if "," in tag:
+            raise ValueError(f"tag '{tag}' must not contain a comma")
+        cleaned.append(tag)
+    return ",".join(cleaned)
 
 
 def string_to_tags(tags: str | None) -> list[str]:

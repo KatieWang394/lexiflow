@@ -15,7 +15,7 @@ Pydantic 数据模型
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ============================================================
@@ -26,6 +26,17 @@ from pydantic import BaseModel, ConfigDict, Field
 
 TermStatus = Literal["new", "learning", "mastered"]
 ReviewRating = Literal["forgot", "hard", "good", "easy"]
+
+
+def _validate_no_comma_in_tags(tags: list[str] | None) -> list[str] | None:
+    """tag 不允许包含逗号（逗号是数据库存储的分隔符）。
+    None 值直接放行（对应 TermUpdate 的"不更新"语义）。"""
+    if tags is None:
+        return tags
+    for tag in tags:
+        if "," in tag:
+            raise ValueError(f"tag '{tag}' must not contain a comma")
+    return tags
 
 
 # ============================================================
@@ -49,6 +60,11 @@ class TermCreate(BaseModel):
     usage_context: str = ""
     tags: list[str] = Field(default_factory=list)
 
+    @field_validator("tags")
+    @classmethod
+    def tags_no_commas(cls, v: list[str]) -> list[str]:
+        return _validate_no_comma_in_tags(v)
+
 
 class TermUpdate(BaseModel):
     """
@@ -69,6 +85,11 @@ class TermUpdate(BaseModel):
     examples: str | None = None
     usage_context: str | None = None
     tags: list[str] | None = None  # None = 不更新，[] = 清空
+
+    @field_validator("tags")
+    @classmethod
+    def tags_no_commas(cls, v: list[str] | None) -> list[str] | None:
+        return _validate_no_comma_in_tags(v)
 
 
 class TermResponse(BaseModel):

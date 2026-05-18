@@ -9,10 +9,10 @@
 - ReviewLog：复习记录表，每次复习产生一条记录
 """
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import Column, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import relationship
 
-from backend.database import Base
+from backend.database import Base, TZDateTime
 from backend.utils.time import utc_now
 
 
@@ -61,10 +61,10 @@ class Term(Base):
     # === 时间字段 ===
     # 注意：default=utc_now 是函数引用（每行创建时调用），
     #       不是 default=utc_now()（只在模块加载时调用一次）
-    created_at = Column(DateTime(timezone=True), default=utc_now)
-    updated_at = Column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
-    last_reviewed_at = Column(DateTime(timezone=True), nullable=True, default=None)
-    next_review_at = Column(DateTime(timezone=True), nullable=True, default=None)
+    created_at = Column(TZDateTime(), default=utc_now)
+    updated_at = Column(TZDateTime(), default=utc_now, onupdate=utc_now)
+    last_reviewed_at = Column(TZDateTime(), nullable=True, default=None)
+    next_review_at = Column(TZDateTime(), nullable=True, default=None)
 
     # === 关联 ===
     # relationship 定义 Python 层面的关联，让你可以通过 term.review_logs 访问复习记录
@@ -104,13 +104,13 @@ class ReviewLog(Base):
     rating = Column(String, nullable=False)
 
     # 复习时间
-    reviewed_at = Column(DateTime(timezone=True), default=utc_now)
+    reviewed_at = Column(TZDateTime(), default=utc_now)
 
     # 复习前该词的 next_review_at（第一次复习时为 NULL，因为新词的 next_review_at 是 NULL）
-    previous_next_review_at = Column(DateTime(timezone=True), nullable=True)
+    previous_next_review_at = Column(TZDateTime(), nullable=True)
 
     # scheduler 计算出的新 next_review_at
-    new_next_review_at = Column(DateTime(timezone=True), nullable=False)
+    new_next_review_at = Column(TZDateTime(), nullable=False)
 
     # 复习后的新间隔天数
     interval_days_after = Column(Integer, nullable=False)
