@@ -104,6 +104,18 @@ def test_list_terms_skip(client):
     assert len(resp.json()) == 2
 
 
+def test_list_terms_skip_negative_returns_422(client):
+    """skip=-1 低于下界 ge=0 → 422"""
+    resp = client.get("/terms?skip=-1")
+    assert resp.status_code == 422
+
+
+def test_list_terms_limit_max_boundary(client):
+    """limit=100 是合法上界，应返回 200"""
+    resp = client.get("/terms?limit=100")
+    assert resp.status_code == 200
+
+
 def test_list_terms_limit_max_is_100(client):
     """limit 超过 100 → 422"""
     resp = client.get("/terms?limit=101")
@@ -195,6 +207,15 @@ def test_update_term_tags_omitted_keeps_tags(client):
     """不传 tags → 保留原有 tags（D08）"""
     created = client.post("/terms", json={"term": "test", "tags": ["GRE"]}).json()
     resp = client.put(f"/terms/{created['id']}", json={"definition": "updated"})
+    assert resp.json()["tags"] == ["GRE"]
+
+
+def test_update_term_tags_null_same_as_omitted(client):
+    """{"tags": null} 与不传 tags 语义相同：Pydantic 解析为 None，
+    update_term 的 `if data.tags is not None` 分支不触发，原值保留（D08）"""
+    created = client.post("/terms", json={"term": "test", "tags": ["GRE"]}).json()
+    resp = client.put(f"/terms/{created['id']}", json={"tags": None})
+    assert resp.status_code == 200
     assert resp.json()["tags"] == ["GRE"]
 
 

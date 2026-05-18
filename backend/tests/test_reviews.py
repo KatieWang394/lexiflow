@@ -14,7 +14,7 @@ from datetime import timedelta
 
 import pytest
 
-from backend.models import Term
+from backend.models import ReviewLog, Term
 from backend.utils.time import utc_now
 
 
@@ -69,6 +69,12 @@ def test_today_new_limit_zero(client):
     _make_term(client, "alpha")
     data = client.get("/reviews/today?new_limit=0").json()
     assert data["new_terms"] == []
+
+
+def test_today_new_limit_max_boundary(client):
+    """new_limit=50 是合法上界，应返回 200"""
+    resp = client.get("/reviews/today?new_limit=50")
+    assert resp.status_code == 200
 
 
 def test_today_new_limit_too_large_returns_422(client):
@@ -367,9 +373,23 @@ def test_get_reviews_only_own_logs(client):
     assert len(logs_b) == 2
 
 
-def test_get_reviews_after_cascade_delete_returns_404(client):
-    """删除词条后，review 记录也消失，GET 应返回 404（而非空列表）"""
+def test_get_reviews_after_cascade_delete(client, db):
+    """词条删除后的两层验证：
+    1. API 层：GET /terms/{id}/reviews → 404（词条不存在）
+    2. DB 层：review_logs 表中对应记录真的被级联删除（D18）
+    """
     t = _make_term(client)
     _review(client, t["id"], "good")
+    _review(client, t["id"], "easy")
+
+    # 删除前确认两条 log 存在
+    assert db.query(ReviewLog).filter(ReviewLog.term_id == t["id"]).count() == 2
+
     client.delete(f"/terms/{t['id']}")
+
+    # API 层：词条不存在 → 404
     assert client.get(f"/terms/{t['id']}/reviews").status_code == 404
+
+    # DB 层：review_logs 记录已被级联删除，不是靠 API 判断，而是直接查表
+    db.expire_all()  # 清除 session 缓存，强制重新查库
+    assert db.query(ReviewLog).filter(ReviewLog.term_id == t["id"]).count() == 0

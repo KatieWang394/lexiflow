@@ -9,6 +9,7 @@ FastAPI 应用入口
 5. 启动时创建数据库表
 """
 
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -21,8 +22,11 @@ from backend.routers import reviews, terms
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用启动时创建数据库表（如果不存在）"""
-    create_tables()
+    """应用启动时创建数据库表（如果不存在）。
+    测试环境（TESTING=1）由 conftest 负责建表，跳过此处避免创建真实 vocab.db（D21）。
+    """
+    if not os.getenv("TESTING"):
+        create_tables()
     yield
 
 

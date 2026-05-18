@@ -10,7 +10,14 @@
   （否则内存 DB 在不同连接间不共享，表看起来不存在）
 - 每个测试用 create_all / drop_all 包围，保证完全隔离
 - 通过 app.dependency_overrides[get_db] 替换真实 DB 连接，测试库永远不接触 vocab.db
+- TESTING=1 让 main.py 的 lifespan 跳过 create_tables()，避免创建真实 vocab.db（D21）
 """
+
+import os
+
+# 必须在 backend.main 被 import 之前设置，lifespan 检查此变量决定是否建表。
+# pytest 加载 conftest.py 时这行立即执行，早于任何 fixture 或测试运行。
+os.environ["TESTING"] = "1"
 
 import pytest
 from fastapi.testclient import TestClient
