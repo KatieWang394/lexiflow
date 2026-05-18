@@ -9,8 +9,17 @@
 
 from sqlalchemy.orm import Session
 
-from backend.models import Term
-from backend.schemas import TermCreate, TermResponse, TermStatus, TermUpdate
+from backend.models import ReviewLog, Term
+from backend.scheduler import calculate_next_review
+from backend.schemas import (
+    ReviewCreate,
+    ReviewLogResponse,
+    TermCreate,
+    TermResponse,
+    TermStatus,
+    TermUpdate,
+    TodayReviewsResponse,
+)
 from backend.utils.tags import string_to_tags, tags_to_string
 from backend.utils.time import utc_now
 
@@ -18,6 +27,11 @@ from backend.utils.time import utc_now
 # ============================================================
 # 私有辅助函数
 # ============================================================
+
+def _to_review_log_response(log: ReviewLog) -> ReviewLogResponse:
+    """ReviewLog ORM → Pydantic。字段名一一对应，无需额外转换。"""
+    return ReviewLogResponse.model_validate(log)
+
 
 def _to_term_response(term: Term) -> TermResponse:
     """将 ORM 对象转换为 API 响应 schema，同时把 tags 从字符串转为列表"""
@@ -141,3 +155,119 @@ def delete_term(db: Session, term_id: int) -> bool:
     db.delete(term)
     db.commit()
     return True
+
+
+# ============================================================
+# Reviews CRUD
+# ============================================================
+
+def get_today_reviews(db: Session, new_limit: int = 10) -> TodayReviewsResponse:
+    """
+    返回今天需要处理的两个列表（D23）：
+
+    due_reviews：status != "new" AND next_review_at IS NOT NULL AND next_review_at <= 现在
+        → 已到复习时间的旧词，按 next_review_at 升序（最晚欠复习的排最前）
+
+    new_terms：status == "new"，按 created_at 升序，最多 new_limit 条
+        → 从未学过的词，先加入的先学
+
+    两个列表永远不会重叠：新词的 next_review_at 是 NULL，
+    因此不满足 due_reviews 的 IS NOT NULL 条件（D07）。
+    """
+    now = utc_now()
+
+    due = (
+        db.query(Term)
+        .filter(
+            Term.status != "new",
+            Term.next_review_at.isnot(None),
+            Term.next_review_at <= now,
+        )
+        .order_by(Term.next_review_at.asc())
+        .all()
+    )
+
+    new = (
+        db.query(Term)
+        .filter(Term.status == "new")
+        .order_by(Term.created_at.asc())
+        .limit(new_limit)
+        .all()
+    )
+
+    return TodayReviewsResponse(
+        due_reviews=[_to_term_response(t) for t in due],
+        new_terms=[_to_term_response(t) for t in new],
+    )
+
+
+def create_review(
+    db: Session, term_id: int, data: ReviewCreate
+) -> ReviewLogResponse | None:
+    """
+    提交一次复习结果，更新词条的调度字段，写入 review_log。
+
+    流程：
+    1. 确认词条存在（不存在 → None，router 转 404）
+    2. 记录复习前的 next_review_at（存入 previous_next_review_at）
+    3. 调用 scheduler 计算新的调度参数
+    4. 写入 ReviewLog
+    5. 更新 Term 的所有调度字段 + 时间戳（D timestamps 规则）
+    6. 一次 commit，保证原子性
+    """
+    term = db.query(Term).filter(Term.id == term_id).first()
+    if term is None:
+        return None
+
+    now = utc_now()
+    previous_next_review_at = term.next_review_at  # 第一次复习时为 NULL
+
+    result = calculate_next_review(
+        rating=data.rating,
+        current_interval_days=term.interval_days,
+        ease_factor=term.ease_factor,
+        repetitions=term.repetitions,
+        now=now,
+    )
+
+    log = ReviewLog(
+        term_id=term_id,
+        rating=data.rating,
+        reviewed_at=now,
+        previous_next_review_at=previous_next_review_at,
+        new_next_review_at=result.next_review_at,
+        interval_days_after=result.interval_days,
+    )
+    db.add(log)
+
+    # 用 scheduler 的结果更新词条调度字段
+    term.status = result.status
+    term.ease_factor = result.ease_factor
+    term.interval_days = result.interval_days
+    term.repetitions = result.repetitions
+    term.next_review_at = result.next_review_at
+    # 时间戳：last_reviewed_at 只在复习时更新（D17）；updated_at 每次写都更新
+    term.last_reviewed_at = now
+    term.updated_at = now
+
+    db.commit()
+    db.refresh(log)
+    return _to_review_log_response(log)
+
+
+def get_term_reviews(db: Session, term_id: int) -> list[ReviewLogResponse] | None:
+    """
+    获取某词条的所有复习记录，按时间倒序（最新的排最前）。
+    词条不存在 → None（router 转 404）。
+    """
+    term_exists = db.query(Term.id).filter(Term.id == term_id).first()
+    if term_exists is None:
+        return None
+
+    logs = (
+        db.query(ReviewLog)
+        .filter(ReviewLog.term_id == term_id)
+        .order_by(ReviewLog.reviewed_at.desc())
+        .all()
+    )
+    return [_to_review_log_response(log) for log in logs]
