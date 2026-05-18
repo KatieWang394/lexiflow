@@ -67,3 +67,22 @@ def client():
 
     app.dependency_overrides.clear()
     Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture
+def db(client):
+    """
+    与 client 共享同一内存库的原始 Session。
+
+    用途：需要绕过 API 直接操作数据的测试，例如把 next_review_at
+    拨到过去来模拟"已到期"。
+
+    为什么能共享：StaticPool 让所有 Session 底层复用同一条 SQLite
+    连接，所以 client 提交的数据对这个 session 立即可见，反之亦然。
+    client fixture 必须先运行（建表），所以这里把它列为依赖。
+    """
+    session = TestingSessionLocal()
+    try:
+        yield session
+    finally:
+        session.close()
