@@ -243,3 +243,21 @@ When reviewing code or making changes, check this document first to ensure consi
 **Reason:** Easier to test and debug than 204 No Content. For a learning project, explicit responses are more instructive.
 
 **Impacted files:** routers/terms.py.
+
+## D25: No concurrency control in v0.1
+
+**Conclusion:** create_review() has no locking or optimistic concurrency control.
+
+**Reason:** v0.1 is a single-user local SQLite app with no concurrent access. Adding row-level locking or optimistic concurrency is deferred until multi-user PostgreSQL migration.
+
+**Impacted files:** crud.py, models.py (future).
+
+---
+
+## D26: {"tags": null} treated as omitted
+
+**Conclusion:** PUT /terms/{id} with {"tags": null} behaves identically to omitting the tags field — existing tags are preserved.
+
+**Reason:** Pydantic parses both cases as None. The update logic uses `if data.tags is not None` to decide whether to update. This is tested but not in the original API contract. Documented here for clarity.
+
+**Impacted files:** schemas.py, crud.py, test_terms.py.

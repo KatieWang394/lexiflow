@@ -326,7 +326,7 @@ def test_health(client):
 
 def test_term_timestamps_are_timezone_aware(client):
     """TermResponse 的时间字段序列化后应带有 UTC 时区偏移（+00:00）。
-    验证 utc_now() → SQLAlchemy DateTime(timezone=True) → Pydantic → JSON 全链路。"""
+    验证 utc_now() → SQLAlchemy TZDateTime → Pydantic → JSON 全链路。"""
     created = client.post("/terms", json={"term": "test"}).json()
     for field in ("created_at", "updated_at"):
         parsed = datetime.fromisoformat(created[field])
