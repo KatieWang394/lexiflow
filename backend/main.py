@@ -16,7 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 import backend.models  # noqa: F401 — 让 Base 知道所有表，create_tables 才能建全
 from backend.database import create_tables
-from backend.routers import terms
+from backend.routers import reviews, terms
 
 
 @asynccontextmanager
@@ -43,6 +43,7 @@ app.add_middleware(
 )
 
 app.include_router(terms.router)
+app.include_router(reviews.router)
 
 
 @app.get("/health")
