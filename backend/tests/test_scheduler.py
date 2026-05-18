@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from backend.scheduler import calculate_next_review
+from backend.utils.time import utc_now
 
 # 固定基准时间，让所有断言确定性
 FIXED_NOW = datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
@@ -160,7 +161,7 @@ def test_easy_increments_repetitions():
 # ============================================================
 
 def test_no_now_uses_real_clock():
-    before = datetime.now(timezone.utc)
+    before = utc_now()
     result = calculate_next_review(
         rating="good",
         current_interval_days=0,
@@ -168,7 +169,7 @@ def test_no_now_uses_real_clock():
         repetitions=0,
         now=None,
     )
-    after = datetime.now(timezone.utc)
+    after = utc_now()
     # next_review_at 应该在 now+7d 附近
     expected_low = before + timedelta(days=7)
     expected_high = after + timedelta(days=7)
