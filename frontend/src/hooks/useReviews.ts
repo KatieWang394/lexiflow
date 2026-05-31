@@ -6,7 +6,7 @@
  */
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getTodayReviews, submitReview } from '@/api/reviews'
+import { getTodayReviews, submitReview, getTermReviews } from '@/api/reviews'
 import { termKeys } from '@/hooks/useTerms'
 import type { ReviewRating } from '@/types/api'
 
@@ -32,6 +32,14 @@ export function useTodayReviews(newLimit?: number) {
   return useQuery({
     queryKey: reviewKeys.today(),
     queryFn: () => getTodayReviews(newLimit),
+  })
+}
+
+/** useTermReviews — GET /terms/:termId/reviews，按时间倒序返回 */
+export function useTermReviews(termId: number) {
+  return useQuery({
+    queryKey: reviewKeys.termHistory(termId),
+    queryFn: () => getTermReviews(termId),
   })
 }
 
