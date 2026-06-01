@@ -6,24 +6,25 @@
  *     BrowserRouter
  *       Routes
  *         Route element=AppLayout  ← 共享布局（header + bottom nav）
- *           Route /                → HomePage
+ *           Route /                → ReviewPage
  *           Route /terms           → TermListPage
  *           Route /terms/new       → AddTermPage   ← 必须在 :id 前面
  *           Route /terms/:id       → TermDetailPage
  *           Route /terms/:id/edit  → EditTermPage
- *           Route /review          → ReviewPage
+ *           Route /review          → Redirect /
+ *           Route /me              → ProfilePage
  */
 
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 import AppLayout from '@/components/AppLayout'
-import HomePage from '@/pages/HomePage'
 import TermListPage from '@/pages/TermListPage'
 import AddTermPage from '@/pages/AddTermPage'
 import TermDetailPage from '@/pages/TermDetailPage'
 import EditTermPage from '@/pages/EditTermPage'
 import ReviewPage from '@/pages/ReviewPage'
+import ProfilePage from '@/pages/ProfilePage'
 
 // 全局 QueryClient 实例
 // staleTime: 30s — 列表数据短暂缓存，避免切 tab 时立即重请求
@@ -43,13 +44,14 @@ export default function App() {
         <Routes>
           {/* AppLayout 作为所有页面的外壳（header + bottom nav） */}
           <Route element={<AppLayout />}>
-            <Route path="/" element={<HomePage />} />
+            <Route path="/" element={<ReviewPage />} />
             <Route path="/terms" element={<TermListPage />} />
             {/* /terms/new 必须在 /terms/:id 前面，否则 "new" 会被当成 id */}
             <Route path="/terms/new" element={<AddTermPage />} />
             <Route path="/terms/:id" element={<TermDetailPage />} />
             <Route path="/terms/:id/edit" element={<EditTermPage />} />
-            <Route path="/review" element={<ReviewPage />} />
+            <Route path="/review" element={<Navigate to="/" replace />} />
+            <Route path="/me" element={<ProfilePage />} />
           </Route>
         </Routes>
       </BrowserRouter>

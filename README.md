@@ -20,7 +20,7 @@ LexiFlow takes a different approach: **it has no built-in word list**. You creat
 
 - **Backend:** Python, FastAPI, SQLAlchemy ORM, Pydantic v2, SQLite
 - **Testing:** pytest, httpx, FastAPI TestClient
-- **Frontend:** React + TypeScript + Vite (planned)
+- **Frontend:** React + TypeScript + Vite
 
 ## Quick Start
 
@@ -49,6 +49,16 @@ uvicorn backend.main:app --reload
 ```
 
 Open http://localhost:8000/docs for interactive API documentation.
+
+For the frontend:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open http://localhost:5173 for the app.
 
 ### Test
 
@@ -87,7 +97,7 @@ When reviewing a term, rate your recall:
 
 ## Future Plans
 
-- React frontend with review card UI and progress dashboard
+- Review UI refinements and richer progress views
 - SM-2 spaced repetition algorithm
 - Daily statistics and learning trends
 - User accounts and data sync

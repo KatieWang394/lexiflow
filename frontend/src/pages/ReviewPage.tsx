@@ -1,88 +1,56 @@
-/**
- * ReviewPage — 今日复习（闪卡模式）
- * ====================================
- * 流程（参考 FRONTEND_DECISIONS.md F09、F13）：
- *
- *   页面加载 → GET /reviews/today → 构建本地 queue（不随 cache 刷新变化）
- *   Phase: 'init'      — 数据还未到达，显示加载中
- *   Phase: 'reviewing' — 显示当前卡片
- *     正面 → 点击 "Show Answer" → 背面
- *     背面 → 点击评分 → POST /terms/:id/reviews
- *            → 成功：进入下一张
- *   Phase: 'divider'   — due_reviews 结束，new_terms 即将开始
- *   Phase: 'done'      — 所有卡片完成
- *   Phase: 'empty'     — 今日无复习任务
- *
- * 状态管理：useState（F13 决策：逻辑简单，不需要 useReducer）
- * 不在前端重新计算调度值（F10 决策）
- */
-
-import { useState, useEffect, useRef } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { CheckCircle2, Loader2, RefreshCw, Plus, Sparkles } from 'lucide-react'
+import {
+  BookMarked,
+  CheckCircle2,
+  Hand,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Sparkles,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { useTodayReviews, useSubmitReview } from '@/hooks/useReviews'
-import type { Term, ReviewRating } from '@/types/api'
-
-// ---- 类型 & 常量 -------------------------------------------------------
+import type { ReviewRating, Term } from '@/types/api'
 
 type Phase = 'init' | 'reviewing' | 'divider' | 'done' | 'empty'
 
-/**
- * 4 个评分按钮的展示配置。
- * 颜色用 Tailwind 语义色（不依赖 CSS 变量）直接区分。
- * 标签含中英文双语，适配多语言用户。
- */
 const RATING_CONFIG = [
   {
-    rating: 'forgot' as const,
-    zh: '忘了',
-    en: 'Forgot',
-    className:
-      'border-red-200 bg-red-50 text-red-700 hover:bg-red-100 active:bg-red-200',
+    rating: 'good' as const,
+    label: '认识',
+    hint: '记得',
+    className: 'bg-[#cfe9df] text-[#174f44] hover:bg-[#bfe0d3]',
   },
   {
     rating: 'hard' as const,
-    zh: '难',
-    en: 'Hard',
-    className:
-      'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100 active:bg-amber-200',
+    label: '模糊',
+    hint: '有印象',
+    className: 'bg-[#fde5bd] text-[#684214] hover:bg-[#f8d79d]',
   },
   {
-    rating: 'good' as const,
-    zh: '记得',
-    en: 'Good',
-    className:
-      'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 active:bg-blue-200',
-  },
-  {
-    rating: 'easy' as const,
-    zh: '简单',
-    en: 'Easy',
-    className:
-      'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 active:bg-emerald-200',
+    rating: 'forgot' as const,
+    label: '忘记',
+    hint: '没想起',
+    className: 'bg-[#f7caca] text-[#71302d] hover:bg-[#efb5b5]',
   },
 ] as const
-
-// ---- 主组件 ------------------------------------------------------------
 
 export default function ReviewPage() {
   const navigate = useNavigate()
   const { data, isLoading, isError, refetch } = useTodayReviews()
   const { mutateAsync } = useSubmitReview()
 
-  // ── 本地 session 状态（只初始化一次，不随 cache 刷新重置）──
   const initialized = useRef(false)
   const [queue, setQueue] = useState<Term[]>([])
-  const [dueCount, setDueCount] = useState(0)     // due_reviews 的数量
+  const [dueCount, setDueCount] = useState(0)
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isRevealed, setIsRevealed] = useState(false)
   const [phase, setPhase] = useState<Phase>('init')
   const [submittingRating, setSubmittingRating] = useState<ReviewRating | null>(null)
   const [submitError, setSubmitError] = useState(false)
 
-  // ── 初始化 queue（只跑一次，之后即使 cache 刷新也不重置）──
   useEffect(() => {
     if (!data || initialized.current) return
     initialized.current = true
@@ -93,9 +61,10 @@ export default function ReviewPage() {
     setPhase(combined.length === 0 ? 'empty' : 'reviewing')
   }, [data])
 
-  // ── 提交评分 ──────────────────────────────────────────────
   async function handleRating(rating: ReviewRating) {
     const currentTerm = queue[currentIndex]
+    if (!currentTerm) return
+
     setSubmitError(false)
     setSubmittingRating(rating)
 
@@ -103,23 +72,19 @@ export default function ReviewPage() {
       await mutateAsync({ termId: currentTerm.id, rating })
 
       const nextIndex = currentIndex + 1
-
       if (nextIndex >= queue.length) {
-        // 所有卡片完成
         setPhase('done')
       } else if (
         currentIndex === dueCount - 1 &&
         dueCount > 0 &&
         queue.length > dueCount
       ) {
-        // 刚完成最后一张复习卡，接下来是新词
         setPhase('divider')
       } else {
         setCurrentIndex(nextIndex)
         setIsRevealed(false)
       }
     } catch {
-      // 提交失败：停在当前卡片，显示错误提示
       setSubmitError(true)
     } finally {
       setSubmittingRating(null)
@@ -128,29 +93,23 @@ export default function ReviewPage() {
 
   function handleContinueFromDivider() {
     setPhase('reviewing')
-    setCurrentIndex(dueCount) // 从第一个新词开始
+    setCurrentIndex(dueCount)
     setIsRevealed(false)
   }
 
-  // ================================================================
-  // 渲染分支
-  // ================================================================
-
-  // ── 加载中 ────────────────────────────────────────────────
   if (isLoading || phase === 'init') {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-3 text-muted-foreground">
+      <ReviewShell className="items-center justify-center gap-3 text-[#7c91a3]">
         <Loader2 className="size-6 animate-spin" />
         <p className="text-sm">加载今日任务…</p>
-      </div>
+      </ReviewShell>
     )
   }
 
-  // ── 请求失败 ───────────────────────────────────────────────
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-4 p-8 text-center">
-        <p className="text-sm text-muted-foreground">
+      <ReviewShell className="items-center justify-center gap-4 px-8 text-center">
+        <p className="text-sm text-[#7c91a3]">
           加载失败，请检查后端是否在运行。
         </p>
         <Button
@@ -159,299 +118,283 @@ export default function ReviewPage() {
             initialized.current = false
             refetch()
           }}
-          className="gap-1.5"
+          className="gap-1.5 bg-white"
         >
           <RefreshCw className="size-4" />
           重试
         </Button>
-      </div>
+      </ReviewShell>
     )
   }
 
-  // ── 今日无任务 ─────────────────────────────────────────────
   if (phase === 'empty') {
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-5 p-8 text-center">
-        <div className="size-16 rounded-full bg-muted flex items-center justify-center">
-          <CheckCircle2 className="size-8 text-muted-foreground" />
+      <ReviewShell className="justify-between px-6 py-8 text-center">
+        <p className="text-left text-xs text-[#7c91a3]">
+          {new Date().toLocaleDateString('zh-CN', {
+            month: 'long',
+            day: 'numeric',
+            weekday: 'long',
+          })}
+        </p>
+
+        <div className="flex flex-col items-center gap-5">
+          <div className="flex size-18 items-center justify-center rounded-full bg-white shadow-sm">
+            <CheckCircle2 className="size-9 text-[#2d8fcb]" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-[#1a1a1a]">今日已全部完成</h1>
+            <p className="mt-2 text-sm leading-relaxed text-[#7c91a3]">
+              没有待复习的词条，也没有新词。
+              <br />
+              可以添加新词，或者去词条页整理内容。
+            </p>
+          </div>
         </div>
-        <div>
-          <h2 className="text-lg font-semibold mb-1">今日已全部完成</h2>
-          <p className="text-sm text-muted-foreground">
-            没有待复习的词条，也没有新词。
-            <br />
-            明天继续保持！
-          </p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Button className="h-12 gap-2" onClick={() => navigate('/terms/new')}>
+            <Plus className="size-4" />
+            添加词条
+          </Button>
+          <Button
+            variant="outline"
+            className="h-12 gap-2 bg-white"
+            onClick={() => navigate('/terms')}
+          >
+            <BookMarked className="size-4" />
+            浏览词条
+          </Button>
         </div>
-        <Button
-          onClick={() => navigate('/terms/new')}
-          className="gap-1.5 mt-1"
-        >
-          <Plus className="size-4" />
-          添加新词条
-        </Button>
-      </div>
+      </ReviewShell>
     )
   }
 
-  // ── 分界过渡页（due_reviews → new_terms）──────────────────
   if (phase === 'divider') {
     const newCount = queue.length - dueCount
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-6 p-8 text-center">
-        <div className="size-16 rounded-full bg-emerald-50 flex items-center justify-center">
-          <CheckCircle2 className="size-8 text-emerald-600" />
+      <ReviewShell className="items-center justify-center gap-6 px-8 text-center">
+        <div className="flex size-16 items-center justify-center rounded-full bg-white shadow-sm">
+          <CheckCircle2 className="size-8 text-[#2d8fcb]" />
         </div>
         <div>
-          <h2 className="text-lg font-semibold mb-1">
-            复习完成 {dueCount} 张 ✓
+          <h2 className="mb-1 text-lg font-semibold text-[#1a1a1a]">
+            复习完成 {dueCount} 张
           </h2>
-          <p className="text-sm text-muted-foreground">
-            接下来是今日新词
-          </p>
+          <p className="text-sm text-[#7c91a3]">接下来是今日新词</p>
         </div>
-
-        {/* 分界线 */}
-        <div className="flex items-center gap-3 w-full max-w-xs">
-          <div className="flex-1 h-px bg-border" />
-          <span className="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
+        <div className="flex w-full max-w-xs items-center gap-3">
+          <div className="h-px flex-1 bg-[#d6e4ef]" />
+          <span className="flex items-center gap-1 whitespace-nowrap text-xs text-[#7c91a3]">
             <Sparkles className="size-3" />
             今日新词 · {newCount} 个
           </span>
-          <div className="flex-1 h-px bg-border" />
+          <div className="h-px flex-1 bg-[#d6e4ef]" />
         </div>
-
-        <Button
-          onClick={handleContinueFromDivider}
-          className="w-full max-w-xs"
-        >
+        <Button onClick={handleContinueFromDivider} className="w-full max-w-xs">
           开始学习新词
         </Button>
-      </div>
+      </ReviewShell>
     )
   }
 
-  // ── 全部完成 ───────────────────────────────────────────────
   if (phase === 'done') {
     const reviewedDue = dueCount
     const reviewedNew = queue.length - dueCount
     return (
-      <div className="flex flex-col items-center justify-center flex-1 gap-6 p-8 text-center">
-        <div className="size-20 rounded-full bg-emerald-50 flex items-center justify-center">
-          <CheckCircle2 className="size-10 text-emerald-600" />
+      <ReviewShell className="items-center justify-center gap-6 px-8 text-center">
+        <div className="flex size-20 items-center justify-center rounded-full bg-white shadow-sm">
+          <CheckCircle2 className="size-10 text-[#2d8fcb]" />
         </div>
         <div>
-          <h2 className="text-xl font-bold mb-2">今日完成！🎉</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="mb-2 text-xl font-bold text-[#1a1a1a]">今日完成</h2>
+          <p className="text-sm text-[#7c91a3]">
             {reviewedDue > 0 && `复习 ${reviewedDue} 张`}
             {reviewedDue > 0 && reviewedNew > 0 && ' · '}
             {reviewedNew > 0 && `新词 ${reviewedNew} 个`}
           </p>
         </div>
-        <div className="flex flex-col gap-2 w-full max-w-xs">
-          <Button onClick={() => navigate('/terms')}>查看词条列表</Button>
-          <Button variant="outline" onClick={() => navigate('/')}>
-            回到首页
-          </Button>
-        </div>
-      </div>
+        <Button onClick={() => navigate('/terms')} className="w-full max-w-xs">
+          查看词条列表
+        </Button>
+      </ReviewShell>
     )
   }
 
-  // ================================================================
-  // Phase: 'reviewing' — 主要闪卡界面
-  // ================================================================
-
   const currentTerm = queue[currentIndex]
+  if (!currentTerm) return null
+
   const isNewTerm = currentIndex >= dueCount
-  // 进度百分比：当前卡片在 queue 中的位置（完成 currentIndex 张）
   const progressPct = queue.length > 0
     ? Math.round((currentIndex / queue.length) * 100)
     : 0
 
   return (
-    <div className="flex flex-col flex-1">
-
-      {/* ── 顶部进度区域 ──────────────────────────────────── */}
-      <div className="px-4 pt-3 pb-2">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-xs text-muted-foreground">
-            {isNewTerm ? (
-              <span className="inline-flex items-center gap-1">
-                <Sparkles className="size-3" />
-                新词
-              </span>
-            ) : (
-              '复习'
-            )}
+    <ReviewShell>
+      <header className="shrink-0 px-7 pb-5 pt-10">
+        <div className="mb-7 flex items-center justify-between text-xs font-medium text-[#7c91a3]">
+          <span className="flex items-center gap-1">
+            {isNewTerm && <Sparkles className="size-3" />}
+            {isNewTerm ? '新词' : '复习'}
           </span>
-          <span className="text-xs font-medium tabular-nums text-foreground/70">
+          <span className="tabular-nums">
             {currentIndex + 1} / {queue.length}
           </span>
         </div>
-        {/* 进度条 */}
-        <div className="h-1 rounded-full bg-muted overflow-hidden">
-          <div
-            className="h-full rounded-full bg-foreground/25 transition-all duration-500 ease-out"
-            style={{ width: `${progressPct}%` }}
-          />
-        </div>
-      </div>
 
-      {/* ── 卡片区域 ─────────────────────────────────────── */}
-      <div className="flex-1 px-4 pb-6">
-        {!isRevealed ? (
-          // ────────────────── 正面 ──────────────────
-          <div className="flex flex-col min-h-[62vh] rounded-2xl border border-border bg-card p-6 shadow-sm">
+        <h1 className="break-words text-5xl font-bold leading-none tracking-normal text-[#1a1a1a]">
+          {currentTerm.term}
+        </h1>
+        <p className="mt-5 inline-flex max-w-full items-center rounded-full bg-[#d8e9f8] px-4 py-1.5 text-sm font-medium text-[#6e8ca5] shadow-sm">
+          <span className="truncate">{formatTermMeta(currentTerm)}</span>
+        </p>
+      </header>
 
-            {/* 新词标签（右上角） */}
-            <div className="flex justify-end min-h-[22px]">
-              {isNewTerm && (
-                <span className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
-                  <Sparkles className="size-3" />
-                  新词
-                </span>
+      {!isRevealed ? (
+        <button
+          type="button"
+          onClick={() => setIsRevealed(true)}
+          className="flex flex-1 flex-col items-center justify-center gap-5 px-8 pb-8 text-center text-[#9ab0c1] transition-colors hover:text-[#7d9aad]"
+        >
+          <span className="flex size-16 items-center justify-center rounded-full border border-[#c6deed] bg-white/30">
+            <Hand className="size-7" />
+          </span>
+          <span className="text-base font-medium">
+            请回忆词义，点击屏幕显示答案
+          </span>
+          <ProgressBar value={progressPct} className="mt-auto w-full" />
+        </button>
+      ) : (
+        <>
+          <section className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 pb-36">
+            {!currentTerm.definition &&
+              !currentTerm.examples &&
+              !currentTerm.usage_context && (
+                <DetailCard title="提示">
+                  <p className="text-sm leading-relaxed text-[#5d6872]">
+                    还没有填写详细内容，凭记忆状态评分即可。
+                  </p>
+                </DetailCard>
               )}
-            </div>
 
-            {/* 词条——竖向居中 */}
-            <div className="flex-1 flex flex-col items-center justify-center text-center py-6">
-              <p className="text-[2rem] font-bold leading-snug break-words w-full mb-3">
-                {currentTerm.term}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                {currentTerm.language}
-                {currentTerm.tags.length > 0 && (
-                  <span> · {currentTerm.tags.join(' · ')}</span>
-                )}
-              </p>
-            </div>
-
-            {/* Show Answer 按钮 */}
-            <Button
-              onClick={() => setIsRevealed(true)}
-              className="w-full h-12 text-[0.9375rem]"
-            >
-              Show Answer
-            </Button>
-          </div>
-        ) : (
-          // ────────────────── 背面 ──────────────────
-          <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
-
-            {/* 词条 header（紧凑版） */}
-            <div className="px-6 pt-5 pb-4 border-b border-border/60">
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-xl font-semibold leading-snug break-words flex-1">
-                  {currentTerm.term}
+            {currentTerm.definition && (
+              <DetailCard title="释义">
+                <p className="whitespace-pre-line text-base leading-8 text-[#3d454c]">
+                  {currentTerm.definition}
                 </p>
-                {isNewTerm && (
-                  <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-700">
-                    <Sparkles className="size-3" />
-                    新词
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {currentTerm.language}
-                {currentTerm.tags.length > 0 && (
-                  <span> · {currentTerm.tags.join(' · ')}</span>
-                )}
-              </p>
-            </div>
-
-            {/* 内容区 */}
-            <div className="px-6 py-5 flex flex-col gap-5">
-              {/* 三个内容字段都为空时的提示 */}
-              {!currentTerm.definition &&
-                !currentTerm.examples &&
-                !currentTerm.usage_context && (
-                  <p className="text-sm text-muted-foreground italic text-center py-3">
-                    还没有填写详细内容——凭感觉评分就好
-                  </p>
-                )}
-
-              {currentTerm.definition && (
-                <ContentSection label="定义">
-                  <p className="text-base leading-relaxed">
-                    {currentTerm.definition}
-                  </p>
-                </ContentSection>
-              )}
-
-              {currentTerm.examples && (
-                <ContentSection label="例句">
-                  <p className="text-sm leading-relaxed whitespace-pre-line text-foreground/80">
-                    {currentTerm.examples}
-                  </p>
-                </ContentSection>
-              )}
-
-              {currentTerm.usage_context && (
-                <ContentSection label="使用场景">
-                  <p className="text-sm leading-relaxed text-foreground/80">
-                    {currentTerm.usage_context}
-                  </p>
-                </ContentSection>
-              )}
-            </div>
-
-            {/* 提交失败提示 */}
-            {submitError && (
-              <div className="mx-5 mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
-                提交失败，请检查网络后重试。
-              </div>
+              </DetailCard>
             )}
 
-            {/* 评分按钮 */}
-            <div className="px-4 pt-1 pb-5">
-              <div className="grid grid-cols-4 gap-2">
-                {RATING_CONFIG.map(({ rating, zh, en, className }) => (
-                  <button
-                    key={rating}
-                    type="button"
-                    onClick={() => handleRating(rating)}
-                    disabled={submittingRating !== null}
-                    className={cn(
-                      'flex flex-col items-center justify-center py-3 rounded-xl border font-medium transition-colors select-none',
-                      className,
-                      submittingRating === rating &&
-                        'opacity-70 scale-[0.97]',
-                      submittingRating !== null &&
-                        submittingRating !== rating &&
-                        'opacity-35 pointer-events-none',
-                    )}
-                  >
-                    <span className="text-[1rem] leading-none">{zh}</span>
-                    <span className="text-[10px] mt-1 font-normal opacity-60">
-                      {en}
-                    </span>
-                  </button>
-                ))}
-              </div>
+            {currentTerm.examples && (
+              <DetailCard title="例句">
+                <p className="whitespace-pre-line text-base leading-8 text-[#3d454c]">
+                  {currentTerm.examples}
+                </p>
+              </DetailCard>
+            )}
+
+            {currentTerm.usage_context && (
+              <DetailCard title="使用场景">
+                <p className="whitespace-pre-line text-base leading-8 text-[#3d454c]">
+                  {currentTerm.usage_context}
+                </p>
+              </DetailCard>
+            )}
+          </section>
+
+          {submitError && (
+            <p className="mx-6 mb-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
+              提交失败，请检查网络后重试。
+            </p>
+          )}
+
+          <footer className="fixed bottom-[60px] left-1/2 z-10 w-full max-w-md -translate-x-1/2 bg-[#f8fbfe]/95 px-4 pb-4 pt-3 backdrop-blur-sm">
+            <div className="grid grid-cols-3 gap-3">
+              {RATING_CONFIG.map(({ rating, label, hint, className }) => (
+                <button
+                  key={rating}
+                  type="button"
+                  onClick={() => handleRating(rating)}
+                  disabled={submittingRating !== null}
+                  className={cn(
+                    'flex h-20 flex-col items-center justify-center rounded-xl font-semibold shadow-sm transition select-none',
+                    className,
+                    submittingRating === rating && 'scale-[0.98] opacity-70',
+                    submittingRating !== null &&
+                      submittingRating !== rating &&
+                      'pointer-events-none opacity-40',
+                  )}
+                >
+                  <span className="text-lg leading-none">{label}</span>
+                  <span className="mt-2 text-xs font-medium opacity-75">
+                    {hint}
+                  </span>
+                </button>
+              ))}
             </div>
-          </div>
-        )}
-      </div>
+            <ProgressBar value={progressPct} className="mt-3" />
+          </footer>
+        </>
+      )}
+    </ReviewShell>
+  )
+}
+
+function ReviewShell({
+  children,
+  className,
+}: {
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div
+      className={cn(
+        'flex h-[calc(100svh-60px)] min-h-[calc(100svh-60px)] flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,#c4ddf2_0%,#deeaf6_26%,#eef4fb_58%,#f8fbfe_100%)]',
+        className,
+      )}
+    >
+      {children}
     </div>
   )
 }
 
-// ---- 辅助组件（只在此文件内用到）---------------------------------------
-
-function ContentSection({
-  label,
+function DetailCard({
+  title,
   children,
 }: {
-  label: string
-  children: React.ReactNode
+  title: string
+  children: ReactNode
 }) {
   return (
-    <div>
-      <p className="text-[0.6875rem] font-semibold uppercase tracking-widest text-muted-foreground mb-2">
-        {label}
-      </p>
+    <article className="rounded-2xl bg-white/95 px-6 py-5 shadow-sm">
+      <h2 className="mb-4 flex items-center gap-3 text-lg font-bold text-[#1a1a1a]">
+        <span className="h-6 w-1 rounded-full bg-[#3b9ad6]" />
+        {title}
+      </h2>
       {children}
+    </article>
+  )
+}
+
+function ProgressBar({
+  value,
+  className,
+}: {
+  value: number
+  className?: string
+}) {
+  return (
+    <div className={cn('h-1 overflow-hidden rounded-full bg-[#dde8f2]', className)}>
+      <div
+        className="h-full rounded-full bg-[#2d8fcb] transition-all duration-500 ease-out"
+        style={{ width: `${value}%` }}
+      />
     </div>
   )
+}
+
+function formatTermMeta(term: Term) {
+  const parts = [term.language, ...term.tags].filter(Boolean)
+  return parts.length > 0 ? parts.join(' · ') : '词条'
 }

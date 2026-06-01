@@ -124,12 +124,109 @@ Configure in `main.py` from day one:
 - `last_reviewed_at`: set only on review submission.
 - `next_review_at`: NULL on creation, set by scheduler after review.
 
-## Do NOT Implement in v0.1
+## Do NOT Implement in Backend v0.1
 
-Authentication, user system, daily_stats table, full SM-2, Docker, deployment, PostgreSQL, React frontend, built-in AI API, prompt marketplace, payment, community features.
+Authentication, user system, daily_stats table, full SM-2, Docker, deployment, PostgreSQL, built-in AI API, prompt marketplace, payment, community features.
 
 ## Work Style
 
 - Work in small steps. Do not generate the entire backend at once.
 - After each step, explain: what changed, which files changed, how to run, how to test, what to learn.
-- Add Chinese comments to key functions.
+- For backend code, add Chinese comments to key functions when helpful.
+- For frontend code, prefer clear component/function names; add comments only when logic is non-obvious.
+
+---
+
+## Frontend
+
+### Tech Stack
+- React + TypeScript + Vite
+- Tailwind CSS + shadcn/ui
+- React Router v6 for SPA routing
+- TanStack Query for server state
+- React Hook Form for add/edit term forms
+- axios for HTTP requests
+
+### Commands
+
+Run frontend commands from `frontend/`:
+
+```bash
+npm install
+npm run dev
+npm run build
+```
+
+The dev server should run on `http://localhost:5173`.
+
+Use current shadcn/ui CLI commands, for example:
+
+```bash
+npx shadcn@latest init
+npx shadcn@latest add button card input textarea label
+```
+
+### File Responsibilities
+
+```
+frontend/src/
+  main.tsx        → React entry point
+  App.tsx         → router + global providers
+  api/client.ts   → axios instance and baseURL config
+  api/terms.ts    → /terms request functions
+  api/reviews.ts  → /reviews request functions
+  hooks/          → TanStack Query wrapper hooks
+  pages/          → page-level route components
+  components/ui/  → shadcn/ui generated components
+  components/     → reusable app components
+  types/api.ts    → TypeScript API types aligned with backend schemas
+  lib/utils.ts    → shared utility functions
+```
+
+### Routes
+
+```
+/                → ReviewPage
+/terms           → TermListPage
+/terms/new       → AddTermPage
+/terms/:id       → TermDetailPage
+/terms/:id/edit  → EditTermPage
+/review          → redirect to /
+/me              → ProfilePage
+```
+
+### Hard Rules
+
+- Only files in `src/api/` may import or call axios directly.
+- Pages and components must access backend data through API wrappers or hooks.
+- Use TanStack Query for backend/server state.
+- Do not use Redux or Zustand in v0.1.
+- Use React local state for simple UI state.
+- Use React Hook Form for add/edit term forms.
+- Keep API types in `src/types/api.ts` aligned with backend `schemas.py`.
+- Do not duplicate scheduler logic in the frontend.
+- Submit review ratings to the backend and trust the backend response.
+- Backend timestamps are UTC; frontend converts them to local time for display only.
+- Use "term", "phrase", or "expression" in UI copy; do not use "word" alone.
+- `term` is the only required field when creating a term.
+- `definition`, `examples`, and `usage_context` must feel optional in the UI.
+- Use textarea for `examples` and `usage_context`.
+- Do not constrain `language` to a fixed dropdown in v0.1.
+- ReviewPage uses flashcard reveal + rating buttons only in v0.1. The current UI keeps the term fixed at the top, reveals the answer in the lower content area, and uses three user-facing rating buttons mapped to backend ratings: 认识→good, 模糊→hard, 忘记→forgot. Do not show predicted next-review dates in the buttons.
+- Keep `ReviewMode = "flashcard" | "typing"` available for future extension, but implement only `"flashcard"` now.
+- ReviewPage MVP uses `useState`; refactor to `useReducer` only if the logic grows.
+- Do not use `localStorage` or `sessionStorage` in v0.1 unless explicitly discussed.
+- Start with flat `components/`; add subfolders only when it becomes cluttered.
+
+### Product Rules
+
+- LexiFlow has no built-in word list.
+- LexiFlow is content-source agnostic: definitions/examples may come from the user, books, notes, real usage, or external AI tools.
+- Do not present LexiFlow as an AI generator in v0.1.
+- The product promise is: users decide what to remember; LexiFlow manages when to review.
+- The UI must support multilingual text, technical terms, phrases, and long examples.
+- Preserve the distinction between `due_reviews` and `new_terms` in the review UI.
+
+### Do NOT Implement in Frontend v0.1
+
+Dark mode, typing-based review mode, daily statistics dashboard, drag-and-drop or complex animations, PWA / offline support, user authentication UI, deployment configuration, E2E tests, internationalization.
